@@ -47,7 +47,7 @@ BODY_HASH=$(printf "%s" "$BODY" \
   | openssl base64 -A)
 
 MAX_RETRIES=500
-SLEEP_SECONDS=5
+SLEEP_SECONDS=300
 ATTEMPT=1
 
 while true; do
@@ -104,7 +104,7 @@ x-content-sha256: ${BODY_HASH}"
     echo "Attempt #$ATTEMPT: ❌ Unauthorized (signature/date issue)"
     echo "$BODY_RESPONSE" | python3 -m json.tool 2>/dev/null || echo "$BODY_RESPONSE"
   elif [[ "$HTTP_CODE" -eq 500 ]] && grep -qi "Out of host capacity" <<< "$BODY_RESPONSE"; then
-    printf "\rAttempt #$ATTEMPT: ⚠️ Out of host capacity"
+    echo "Attempt #$ATTEMPT: ⚠️ Out of host capacity"
   elif [[ "$HTTP_CODE" -eq 500 ]]; then
     echo "Attempt #$ATTEMPT: ❌ Internal server error"
     echo "$BODY_RESPONSE" | python3 -m json.tool 2>/dev/null || echo "$BODY_RESPONSE"
