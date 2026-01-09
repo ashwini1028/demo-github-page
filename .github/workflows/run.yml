@@ -1,0 +1,26 @@
+name: OCI VM Create Retry
+
+on:
+  workflow_dispatch:
+
+jobs:
+  create-vm:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Install dependencies
+        run: sudo apt-get update && sudo apt-get install -y openssl python3
+
+      - name: Run OCI create instance script
+        env:
+          TENANCY_OCID: ${{ secrets.TENANCY_OCID }}
+          USER_OCID: ${{ secrets.USER_OCID }}
+          FINGERPRINT: ${{ secrets.FINGERPRINT }}
+          PRIVATE_KEY: ${{ secrets.PRIVATE_KEY }}
+          REGION: ${{ secrets.REGION }}
+        run: |
+          chmod +x create_instance.sh
+          ./create_instance.sh
