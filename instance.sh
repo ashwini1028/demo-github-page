@@ -5,7 +5,6 @@ set -euo pipefail
 # REQUEST CONFIG
 ########################################
 HOST="iaas.${REGION}.oraclecloud.com"
-METHOD="POST"
 REQUEST_PATH="/20160918/instances/"
 URL="https://${HOST}${REQUEST_PATH}"
 
@@ -42,116 +41,47 @@ read -r -d '' BODY <<'EOF' || true
 }
 EOF
 
-########################################
-# PARSE URL (matching PHP parse_url behavior)
-########################################
-# Extract path and host from URL
-# PHP parse_url returns: ['scheme' => 'https', 'host' => 'iaas...', 'path' => '/20160918/instances/']
-URI_PATH="$REQUEST_PATH"
-# If there's a query string, it would be appended here (none in this case)
-
-########################################
-# DATE (matching PHP gmdate(DATE_RFC7231))
-# PHP DATE_RFC7231 format: "D, d M Y H:i:s \G\M\T"
-# Example: "Wed, 07 Jan 2026 20:38:29 GMT"
-########################################
-DATE=$(LC_ALL=C TZ=GMT date -u "+%a, %d %b %Y %H:%M:%S GMT")
-
-########################################
-# CONTENT LENGTH (matching PHP strlen($body))
-# strlen() returns byte length
-########################################
 CONTENT_LENGTH=$(printf "%s" "$BODY" | wc -c | tr -d ' ')
-
-########################################
-# BODY HASH (matching PHP getBodyHashBase64)
-# PHP: hash('sha256', $body, true) then base64_encode()
-# The 'true' parameter means binary output
-########################################
 BODY_HASH=$(printf "%s" "$BODY" \
   | openssl dgst -binary -sha256 \
   | openssl base64 -A)
 
-########################################
-# BUILD HEADERS TO SIGN (matching PHP getHeadersToSign)
-# Order: date, (request-target), host, content-length, content-type, x-content-sha256
-########################################
-METHOD_LOWER=$(echo "$METHOD" | tr '[:upper:]' '[:lower:]')
-
-# Build headers map exactly as PHP does
-# PHP: $headersMap[self::SIGNING_HEADER_DATE] = $dateString;
-HEADER_DATE="$DATE"
-
-# PHP: $headersMap[self::SIGNING_HEADER_REQUEST_TARGET] = strtolower($method) . " $uri";
-HEADER_REQUEST_TARGET="${METHOD_LOWER} ${URI_PATH}"
-
-# PHP: $headersMap[self::SIGNING_HEADER_HOST] = $parsed['host'] ?? '';
-HEADER_HOST="$HOST"
-
-# PHP: $headersMap[self::SIGNING_HEADER_CONTENT_LENGTH] = $contentLength;
-HEADER_CONTENT_LENGTH="$CONTENT_LENGTH"
-
-# PHP: $headersMap[self::SIGNING_HEADER_CONTENT_TYPE] = $contentType;
-HEADER_CONTENT_TYPE="application/json"
-
-# PHP: $headersMap[self::SIGNING_HEADER_X_CONTENT_SHA256] = $bodyHashBase64;
-HEADER_X_CONTENT_SHA256="$BODY_HASH"
-
-########################################
-# BUILD SIGNING STRING (matching PHP getSigningString)
-# PHP: foreach ($headersToSign as $header => $value) {
-#       $signingHeaders[] = "$header: $value";
-#      }
-#      return implode("\n", $signingHeaders);
-# Note: implode("\n", ...) joins with newlines but NO trailing newline
-########################################
-STRING_TO_SIGN="date: ${HEADER_DATE}
-(request-target): ${HEADER_REQUEST_TARGET}
-host: ${HEADER_HOST}
-content-length: ${HEADER_CONTENT_LENGTH}
-content-type: ${HEADER_CONTENT_TYPE}
-x-content-sha256: ${HEADER_X_CONTENT_SHA256}"
-
-########################################
-# CALCULATE SIGNATURE (matching PHP calculateSignature)
-# PHP: openssl_sign($signingString, $binarySignature, $privateKeyId, OPENSSL_ALGO_SHA256)
-#      then base64_encode($binarySignature)
-# openssl dgst -sha256 -sign is equivalent to openssl_sign with OPENSSL_ALGO_SHA256
-########################################
-: "${PRIVATE_KEY:?Missing PRIVATE_KEY}"
-
-PRIVATE_KEY_FILE="$(mktemp)"
-printf "%s\n" "$PRIVATE_KEY" > "$PRIVATE_KEY_FILE"
-chmod 600 "$PRIVATE_KEY_FILE"
-
-SIGNATURE=$(printf "%s" "$STRING_TO_SIGN" \
-  | openssl dgst -sha256 -sign "$PRIVATE_KEY_FILE" \
-  | openssl base64 -A)
-
-trap 'rm -f "$PRIVATE_KEY_FILE"' EXIT
-
-########################################
-# BUILD AUTHORIZATION HEADER
-# Note: version="1" is not required by OCI API
-# $signedHeaders = implode(' ', array_keys($headersToSign))
-# Order: date (request-target) host content-length content-type x-content-sha256
-########################################
-KEY_ID="${TENANCY_OCID}/${USER_OCID}/${FINGERPRINT}"
-SIGNED_HEADERS="date (request-target) host content-length content-type x-content-sha256"
-AUTH_HEADER="Signature keyId=\"${KEY_ID}\",algorithm=\"rsa-sha256\",headers=\"${SIGNED_HEADERS}\",signature=\"${SIGNATURE}\""
-
-########################################
-# CALL OCI API
-# Note: PHP doesn't send (request-target) as an actual header
-# PHP: if ($headerName === self::SIGNING_HEADER_REQUEST_TARGET) { continue; }
-########################################
-
 MAX_RETRIES=500
-SLEEP_SECONDS=300
+SLEEP_SECONDS=10
 ATTEMPT=1
 
 while true; do
 
+  ########################################
+  # REGENERATE DATE + SIGNATURE (CRITICAL)
+  ########################################
+  DATE=$(LC_ALL=C TZ=GMT date -u "+%a, %d %b %Y %H:%M:%S GMT")
+
+  STRING_TO_SIGN="date: ${DATE}
+(request-target): post ${REQUEST_PATH}
+host: ${HOST}
+content-length: ${CONTENT_LENGTH}
+content-type: application/json
+x-content-sha256: ${BODY_HASH}"
+
+  : "${PRIVATE_KEY:?Missing PRIVATE_KEY}"
+
+  PRIVATE_KEY_FILE="$(mktemp)"
+  printf "%s\n" "$PRIVATE_KEY" > "$PRIVATE_KEY_FILE"
+  chmod 600 "$PRIVATE_KEY_FILE"
+
+  SIGNATURE=$(printf "%s" "$STRING_TO_SIGN" \
+    | openssl dgst -sha256 -sign "$PRIVATE_KEY_FILE" \
+    | openssl base64 -A)
+
+  trap 'rm -f "$PRIVATE_KEY_FILE"' EXIT  
+
+  KEY_ID="${TENANCY_OCID}/${USER_OCID}/${FINGERPRINT}"
+  AUTH_HEADER="Signature keyId=\"${KEY_ID}\",algorithm=\"rsa-sha256\",headers=\"date (request-target) host content-length content-type x-content-sha256\",signature=\"${SIGNATURE}\""
+
+  ########################################
+  # CURL CALL
+  ########################################
   RESPONSE=$(curl -s -w "\nHTTP_CODE:%{http_code}" -X POST "$URL" \
     -H "Date: $DATE" \
     -H "Host: $HOST" \
@@ -164,18 +94,28 @@ while true; do
   HTTP_CODE=$(echo "$RESPONSE" | grep "HTTP_CODE" | cut -d: -f2)
   BODY_RESPONSE=$(echo "$RESPONSE" | sed '/HTTP_CODE/d')
 
-  if echo "$BODY_RESPONSE" | grep -qi "Out of host capacity"; then
-    echo "Attempt #$ATTEMPT: ⚠️  Out of host capacity detected."
+  ########################################
+  # RESPONSE HANDLING
+  ########################################
+  if [[ "$HTTP_CODE" -eq 429 ]]; then
+    echo "Attempt #$ATTEMPT: ⚠️ TooManyRequests"
+    echo "$BODY_RESPONSE" | python3 -m json.tool 2>/dev/null || echo "$BODY_RESPONSE"
+  elif [[ "$HTTP_CODE" -eq 401 ]]; then
+    echo "Attempt #$ATTEMPT: ❌ Unauthorized (signature/date issue)"
+    echo "$BODY_RESPONSE" | python3 -m json.tool 2>/dev/null || echo "$BODY_RESPONSE"
+  elif [[ "$HTTP_CODE" -eq 500 ]] && grep -qi "Out of host capacity" <<< "$BODY_RESPONSE"; then
+    echo "Attempt #$ATTEMPT: ⚠️ Out of host capacity"
+  elif [[ "$HTTP_CODE" -eq 500 ]]; then
+    echo "Attempt #$ATTEMPT: ❌ Internal server error"
+    echo "$BODY_RESPONSE" | python3 -m json.tool 2>/dev/null || echo "$BODY_RESPONSE"
   else
-    echo "Attempt #$ATTEMPT: ✅ No capacity error. Exiting loop."
-    echo "HTTP Status Code: $HTTP_CODE"
-    echo "Response Body:"
+    echo "Attempt #$ATTEMPT: ✅ Success or non-retryable response"
     echo "$BODY_RESPONSE" | python3 -m json.tool 2>/dev/null || echo "$BODY_RESPONSE"
     break
   fi
 
   if [[ "$ATTEMPT" -ge "$MAX_RETRIES" ]]; then
-    echo "Attempt #$ATTEMPT: ❌ Max retries ($MAX_RETRIES) reached. Exiting."
+    echo "Attempt #$ATTEMPT: ❌ Max retries reached"
     exit 1
   fi
 
