@@ -104,7 +104,7 @@ x-content-sha256: ${BODY_HASH}"
     echo "Attempt #$ATTEMPT: ❌ Unauthorized (signature/date issue)"
     echo "$BODY_RESPONSE" | python3 -m json.tool 2>/dev/null || echo "$BODY_RESPONSE"
   elif [[ "$HTTP_CODE" -eq 500 ]] && grep -qi "Out of host capacity" <<< "$BODY_RESPONSE"; then
-    echo "Attempt #$ATTEMPT: ⚠️ Out of host capacity"
+    printf "\rAttempt #$ATTEMPT: ⚠️ Out of host capacity"
   elif [[ "$HTTP_CODE" -eq 500 ]]; then
     echo "Attempt #$ATTEMPT: ❌ Internal server error"
     echo "$BODY_RESPONSE" | python3 -m json.tool 2>/dev/null || echo "$BODY_RESPONSE"
