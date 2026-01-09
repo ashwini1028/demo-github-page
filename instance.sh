@@ -146,8 +146,8 @@ AUTH_HEADER="Signature keyId=\"${KEY_ID}\",algorithm=\"rsa-sha256\",headers=\"${
 # PHP: if ($headerName === self::SIGNING_HEADER_REQUEST_TARGET) { continue; }
 ########################################
 
-MAX_RETRIES=50
-SLEEP_SECONDS=5
+MAX_RETRIES=500
+SLEEP_SECONDS=300
 ATTEMPT=1
 
 while true; do
@@ -165,16 +165,13 @@ while true; do
   HTTP_CODE=$(echo "$RESPONSE" | grep "HTTP_CODE" | cut -d: -f2)
   BODY_RESPONSE=$(echo "$RESPONSE" | sed '/HTTP_CODE/d')
 
-  echo "HTTP Status Code: $HTTP_CODE"
-  echo "Response Body:"
-  # Pretty-print JSON if possible
-  echo "$BODY_RESPONSE" | python3 -m json.tool 2>/dev/null || echo "$BODY_RESPONSE"
-
-  # Retry ONLY if keyword is present
   if echo "$BODY_RESPONSE" | grep -qi "Out of host capacity"; then
     echo "⚠️  Out of host capacity detected."
   else
     echo "✅ No capacity error. Exiting loop."
+    echo "HTTP Status Code: $HTTP_CODE"
+    echo "Response Body:"
+    echo "$BODY_RESPONSE" | python3 -m json.tool 2>/dev/null || echo "$BODY_RESPONSE"
     break
   fi
 
@@ -182,8 +179,7 @@ while true; do
     echo "❌ Max retries ($MAX_RETRIES) reached. Exiting."
     exit 1
   fi
-
-  echo "⏳ Retrying in $SLEEP_SECONDS seconds..."
+  
   ATTEMPT=$((ATTEMPT + 1))
   sleep "$SLEEP_SECONDS"
 done
