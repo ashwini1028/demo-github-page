@@ -47,7 +47,7 @@ BODY_HASH=$(printf "%s" "$BODY" \
   | openssl base64 -A)
 
 MAX_RETRIES=500
-SLEEP_SECONDS=10
+SLEEP_SECONDS=300
 ATTEMPT=1
 
 while true; do
