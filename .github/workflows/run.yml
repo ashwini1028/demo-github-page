@@ -22,5 +22,5 @@ jobs:
           PRIVATE_KEY: ${{ secrets.PRIVATE_KEY }}
           REGION: ${{ secrets.REGION }}
         run: |
-          chmod +x create_instance.sh
-          ./create_instance.sh
+          chmod +x instance.sh
+          ./instance.sh
