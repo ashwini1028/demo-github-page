@@ -151,7 +151,6 @@ SLEEP_SECONDS=300
 ATTEMPT=1
 
 while true; do
-  echo "Attempt #$ATTEMPT..."
 
   RESPONSE=$(curl -s -w "\nHTTP_CODE:%{http_code}" -X POST "$URL" \
     -H "Date: $DATE" \
@@ -166,9 +165,9 @@ while true; do
   BODY_RESPONSE=$(echo "$RESPONSE" | sed '/HTTP_CODE/d')
 
   if echo "$BODY_RESPONSE" | grep -qi "Out of host capacity"; then
-    echo "⚠️  Out of host capacity detected."
+    echo "Attempt #$ATTEMPT: ⚠️  Out of host capacity detected."
   else
-    echo "✅ No capacity error. Exiting loop."
+    echo "Attempt #$ATTEMPT: ✅ No capacity error. Exiting loop."
     echo "HTTP Status Code: $HTTP_CODE"
     echo "Response Body:"
     echo "$BODY_RESPONSE" | python3 -m json.tool 2>/dev/null || echo "$BODY_RESPONSE"
@@ -176,10 +175,10 @@ while true; do
   fi
 
   if [[ "$ATTEMPT" -ge "$MAX_RETRIES" ]]; then
-    echo "❌ Max retries ($MAX_RETRIES) reached. Exiting."
+    echo "Attempt #$ATTEMPT: ❌ Max retries ($MAX_RETRIES) reached. Exiting."
     exit 1
   fi
-  
+
   ATTEMPT=$((ATTEMPT + 1))
   sleep "$SLEEP_SECONDS"
 done
